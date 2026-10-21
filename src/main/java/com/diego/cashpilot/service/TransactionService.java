@@ -20,10 +20,11 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
 
-    public TransactionResponseDTO create(TransactionRequestDTO dto){
+    public TransactionResponseDTO create(TransactionRequestDTO dto) {
+        return createForUser(getLoggedUser(), dto);
+    }
 
-        User user = getLoggedUser();
-
+    public TransactionResponseDTO createForUser(User user, TransactionRequestDTO dto) {
         Transaction transaction = Transaction.builder()
                 .description(dto.getDescription())
                 .amount(dto.getAmount())
@@ -32,9 +33,7 @@ public class TransactionService {
                 .user(user)
                 .build();
 
-        transaction = transactionRepository.save(transaction);
-
-        return mapToResponse(transaction);
+        return mapToResponse(transactionRepository.save(transaction));
     }
 
     public TransactionResponseDTO update(Long id, TransactionRequestDTO dto){
