@@ -33,22 +33,32 @@ public class TelegramBotService {
     private static final int LATEST_LIMIT = 5;
 
     private static final String HELP = """
-            Comandos:
+            Você pode escrever livremente:
+            gastei 40 no mercado
+            recebi 1.500 de salário ontem
+            paguei 120 de luz dia 15
+
+            Ou usar comandos:
             /gasto 35,90 mercado
             /receita 1500 salário
             /saldo — resumo do mês atual
             /ultimos — últimos 5 lançamentos
             /desfazer — remove o último lançamento
 
-            A descrição é opcional. O lançamento é registrado com a data de hoje.
+            Sem data, o lançamento vai para hoje.
             """;
 
     private static final String NOT_LINKED =
             "Sua conta ainda não está conectada. Use o botão \"Conectar Telegram\" no dashboard.";
 
+    private static final String NOT_UNDERSTOOD =
+            "Não consegui entender. Tente algo como \"gastei 40 no mercado\" ou use /gasto 40 mercado. "
+                    + "Veja /ajuda.";
+
     private final TelegramClient client;
     private final TelegramLinkService linkService;
     private final TelegramCommandParser parser;
+    private final TelegramFreeTextParser freeTextParser;
     private final TransactionService transactionService;
 
     // O Telegram reenvia o mesmo update se a resposta demorar (ex.: serviço acordando).
@@ -65,13 +75,20 @@ public class TelegramBotService {
 
         long chatId = message.chat().id();
         String text = message.text().trim();
+
+        // Texto livre: qualquer mensagem que não seja comando.
+        if (!text.startsWith("/")) {
+            withUser(chatId, user -> handleFreeText(chatId, user, text));
+            return;
+        }
+
         String command = text.split("\\s+")[0].toLowerCase().replaceAll("@.*$", "");
 
         switch (command) {
             case "/start" -> handleStart(chatId, text);
             case "/ajuda", "/help" -> client.sendMessage(chatId, HELP);
             case "/gasto", "/despesa", "/receita" ->
-                    withUser(chatId, user -> handleTransaction(chatId, user, text));
+                    withUser(chatId, user -> handleCommandTransaction(chatId, user, text));
             case "/saldo" -> withUser(chatId, user -> handleBalance(chatId, user));
             case "/ultimos" -> withUser(chatId, user -> handleLatest(chatId, user));
             case "/desfazer" -> withUser(chatId, user -> handleUndo(chatId, user));
@@ -107,24 +124,45 @@ public class TelegramBotService {
         }
     }
 
-    private void handleTransaction(long chatId, User user, String text) {
+    private void handleCommandTransaction(long chatId, User user, String text) {
         try {
             TelegramCommandParser.ParsedTransaction parsed = parser.parse(text);
-
-            TransactionRequestDTO dto = new TransactionRequestDTO();
-            dto.setDescription(parsed.description());
-            dto.setAmount(parsed.amount());
-            dto.setType(parsed.type());
-            dto.setDate(LocalDate.now(ZONE));
-
-            transactionService.createForUser(user, dto);
-
-            client.sendMessage(chatId,
-                    "✅ " + typeLabel(parsed.type()) + " registrada: "
-                            + money(parsed.amount()) + " — " + parsed.description());
+            register(chatId, user, parsed.type(), parsed.amount(), parsed.description(),
+                    LocalDate.now(ZONE), false);
         } catch (IllegalArgumentException e) {
             client.sendMessage(chatId, "⚠️ " + e.getMessage());
         }
+    }
+
+    private void handleFreeText(long chatId, User user, String text) {
+        Optional<TelegramFreeTextParser.Result> parsed = freeTextParser.parse(text, LocalDate.now(ZONE));
+
+        if (parsed.isPresent()) {
+            TelegramFreeTextParser.Result r = parsed.get();
+            register(chatId, user, r.type(), r.amount(), r.description(), r.date(), true);
+            return;
+        }
+
+        // Fase 2: é aqui que o Gemini entra, quando o parser por regras não tem certeza.
+        client.sendMessage(chatId, NOT_UNDERSTOOD);
+    }
+
+    private void register(long chatId, User user, TransactionType type, BigDecimal amount,
+                          String description, LocalDate date, boolean showUndoHint) {
+        TransactionRequestDTO dto = new TransactionRequestDTO();
+        dto.setDescription(description);
+        dto.setAmount(amount);
+        dto.setType(type);
+        dto.setDate(date);
+
+        transactionService.createForUser(user, dto);
+
+        String reply = "✅ " + typeLabel(type) + " registrada: " + money(amount)
+                + " — " + description + " (" + date.format(DAY_MONTH) + ")";
+        if (showUndoHint) {
+            reply += "\nErrou? Use /desfazer.";
+        }
+        client.sendMessage(chatId, reply);
     }
 
     private void handleBalance(long chatId, User user) {
