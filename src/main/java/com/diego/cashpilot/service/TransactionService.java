@@ -8,11 +8,15 @@ import com.diego.cashpilot.model.User;
 import com.diego.cashpilot.model.enums.TransactionType;
 import com.diego.cashpilot.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.YearMonth;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -20,11 +24,13 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
 
-    public TransactionResponseDTO create(TransactionRequestDTO dto) {
+    public TransactionResponseDTO create(TransactionRequestDTO dto){
         return createForUser(getLoggedUser(), dto);
     }
 
-    public TransactionResponseDTO createForUser(User user, TransactionRequestDTO dto) {
+    // Usado pelo bot do Telegram: o webhook não tem JWT, então o usuário vem explícito.
+    public TransactionResponseDTO createForUser(User user, TransactionRequestDTO dto){
+
         Transaction transaction = Transaction.builder()
                 .description(dto.getDescription())
                 .amount(dto.getAmount())
@@ -33,7 +39,9 @@ public class TransactionService {
                 .user(user)
                 .build();
 
-        return mapToResponse(transactionRepository.save(transaction));
+        transaction = transactionRepository.save(transaction);
+
+        return mapToResponse(transaction);
     }
 
     public TransactionResponseDTO update(Long id, TransactionRequestDTO dto){
@@ -83,10 +91,21 @@ public class TransactionService {
     }
 
     public TransactionSummaryDTO getSummary(){
-        User user = getLoggedUser();
+        return summarize(transactionRepository.findByUser(getLoggedUser()));
+    }
 
-        List<Transaction> transactions = transactionRepository.findByUser(user);
+    // Resumo de um mês específico, no mesmo critério do dashboard (que filtra por mês).
+    @Transactional(readOnly = true)
+    public TransactionSummaryDTO getSummaryForUser(User user, YearMonth month){
+        List<Transaction> inMonth = transactionRepository.findByUser(user)
+                .stream()
+                .filter(t -> t.getDate() != null && YearMonth.from(t.getDate()).equals(month))
+                .toList();
 
+        return summarize(inMonth);
+    }
+
+    private TransactionSummaryDTO summarize(List<Transaction> transactions){
         BigDecimal income = BigDecimal.ZERO;
         BigDecimal expense = BigDecimal.ZERO;
 
@@ -106,7 +125,26 @@ public class TransactionService {
                 .expense(expense)
                 .balance(balance)
                 .build();
+    }
 
+    // Mais recentes primeiro (por data e, no empate, pelo último criado).
+    @Transactional(readOnly = true)
+    public List<TransactionResponseDTO> findLatestForUser(User user, int limit){
+        return transactionRepository
+                .findByUserOrderByDateDescIdDesc(user, PageRequest.of(0, limit))
+                .stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    // Remove o último lançamento CRIADO (maior id) e devolve o que foi removido.
+    @Transactional
+    public Optional<TransactionResponseDTO> deleteLatestForUser(User user){
+        return transactionRepository.findFirstByUserOrderByIdDesc(user)
+                .map(transaction -> {
+                    transactionRepository.delete(transaction);
+                    return mapToResponse(transaction);
+                });
     }
 
     public void delete(Long id){

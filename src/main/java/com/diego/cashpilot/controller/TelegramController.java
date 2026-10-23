@@ -52,4 +52,9 @@ public class TelegramController {
         }
         return ResponseEntity.ok().build();
     }
+
+    @GetMapping("/status")
+    public TelegramLinkService.Status status(@AuthenticationPrincipal User user) {
+        return linkService.getStatus(user);
+    }
 }

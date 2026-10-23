@@ -24,6 +24,8 @@ public class TelegramLinkService {
 
     private record PendingLink(User user, Instant expiresAt) {}
 
+    public record Status(boolean connected, String botUsername) {}
+
     private static final Duration TTL = Duration.ofMinutes(10);
     private static final String ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -74,6 +76,11 @@ public class TelegramLinkService {
     @Transactional(readOnly = true)
     public Optional<User> findUserByChatId(long chatId) {
         return repository.findByChatId(chatId).map(TelegramLink::getUser);
+    }
+
+    @Transactional(readOnly = true)
+    public Status getStatus(User user) {
+        return new Status(repository.findByUser(user).isPresent(), botUsername);
     }
 
     private String randomCode(int length) {
