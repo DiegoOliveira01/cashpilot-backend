@@ -12,10 +12,9 @@ public class TelegramClient {
 
     private final RestClient restClient;
 
-    public TelegramClient(RestClient.Builder builder,
-                          @Value("${telegram.bot-token}") String token) {
+    public TelegramClient(@Value("${telegram.bot-token}") String token) {
         // O token faz parte da URL da API: nunca logue a URL completa.
-        this.restClient = builder
+        this.restClient = RestClient.builder()
                 .baseUrl("https://api.telegram.org/bot" + token)
                 .build();
     }
