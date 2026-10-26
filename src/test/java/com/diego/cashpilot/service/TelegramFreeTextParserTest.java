@@ -33,7 +33,10 @@ class TelegramFreeTextParserTest {
                 Arguments.of("gastei 35.90 na farmácia", TransactionType.EXPENSE, "35.90", "farmácia", TODAY),
                 Arguments.of("gastei 25 dia 30", TransactionType.EXPENSE, "25.00", "Despesa", LocalDate.of(2026, 9, 30)),
                 Arguments.of("gastei 40", TransactionType.EXPENSE, "40.00", "Despesa", TODAY),
-                Arguments.of("recebi 200", TransactionType.INCOME, "200.00", "Receita", TODAY)
+                Arguments.of("recebi 200", TransactionType.INCOME, "200.00", "Receita", TODAY),
+                Arguments.of("Ontem fui ao mercado e gastei R$351,29", TransactionType.EXPENSE, "351.29", "mercado", LocalDate.of(2026, 10, 21)),
+                Arguments.of("passei na farmácia e paguei 25", TransactionType.EXPENSE, "25.00", "farmácia", TODAY),
+                Arguments.of("gastei 40 no mercado e na padaria", TransactionType.EXPENSE, "40.00", "mercado e padaria", TODAY)
         );
     }
 

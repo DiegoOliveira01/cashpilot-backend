@@ -38,7 +38,10 @@ public class TelegramFreeTextParser {
             "reais", "real", "conto", "contos", "pila", "pilas");
     private static final Set<String> STOPWORDS = Set.of(
             "de", "do", "da", "dos", "das", "no", "na", "nos", "nas", "em", "com", "o", "a", "os", "as",
-            "um", "uma", "uns", "umas", "por", "pra", "para", "que", "foi", "meu", "minha");
+            "um", "uma", "uns", "umas", "por", "pra", "para", "que", "foi", "meu", "minha",
+            "ao", "aos", "fui", "passei", "vim");
+    // "e"/"ou" sobrando nas pontas da descrição ("fui ao mercado e gastei 50" -> "mercado").
+    private static final Set<String> EDGE_CONNECTORS = Set.of("e", "ou");
 
     // "1.500,50" | "1.500" (milhar) | "35,90" | "35.90" | "40"
     private static final Pattern NUMBER =
@@ -140,18 +143,20 @@ public class TelegramFreeTextParser {
         if (idx + 1 < n && CURRENCY_WORDS.contains(norm[idx + 1])) consumed[idx + 1] = true;
 
         // 4) Descrição: o que sobrou, sem conectores.
-        StringBuilder description = new StringBuilder();
+        List<String> words = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             if (consumed[i] || norm[i].equals("r$") || STOPWORDS.contains(norm[i])) continue;
             String word = tokens[i].replaceAll("^\\p{Punct}+|\\p{Punct}+$", "");
-            if (word.isEmpty()) continue;
-            if (!description.isEmpty()) description.append(' ');
-            description.append(word);
+            if (!word.isEmpty()) words.add(word);
+        }
+        while (!words.isEmpty() && EDGE_CONNECTORS.contains(normalize(words.get(0)))) words.remove(0);
+        while (!words.isEmpty() && EDGE_CONNECTORS.contains(normalize(words.get(words.size() - 1)))) {
+            words.remove(words.size() - 1);
         }
 
-        String finalDescription = description.isEmpty()
+        String finalDescription = words.isEmpty()
                 ? (type == TransactionType.INCOME ? "Receita" : "Despesa")
-                : description.toString();
+                : String.join(" ", words);
         if (finalDescription.length() > 255) finalDescription = finalDescription.substring(0, 255);
 
         return Optional.of(new Result(type, chosen.value(), finalDescription, date));
