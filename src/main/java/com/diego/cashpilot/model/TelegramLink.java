@@ -29,4 +29,9 @@ public class TelegramLink {
 
     @Column(name = "linked_at", nullable = false)
     private LocalDateTime linkedAt;
+
+    // Consentimento para enviar frases ao Gemini. Nullable de propósito: o Hibernate
+    // adiciona a coluna sem quebrar as linhas que já existem (null = não consentiu).
+    @Column(name = "ai_consent")
+    private Boolean aiConsent;
 }

@@ -22,9 +22,9 @@ public class TelegramLinkService {
 
     public record LinkCode(String code, String deepLink, int expiresInMinutes) {}
 
-    private record PendingLink(User user, Instant expiresAt) {}
-
     public record Status(boolean connected, String botUsername) {}
+
+    private record PendingLink(User user, Instant expiresAt) {}
 
     private static final Duration TTL = Duration.ofMinutes(10);
     private static final String ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -60,6 +60,7 @@ public class TelegramLinkService {
         }
 
         // Um chat por usuário e um usuário por chat: substitui vínculos antigos.
+        // (Um novo vínculo começa sem consentimento de IA.)
         repository.findByChatId(chatId).ifPresent(repository::delete);
         repository.findByUser(link.user()).ifPresent(repository::delete);
         repository.flush();
@@ -81,6 +82,21 @@ public class TelegramLinkService {
     @Transactional(readOnly = true)
     public Status getStatus(User user) {
         return new Status(repository.findByUser(user).isPresent(), botUsername);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasAiConsent(long chatId) {
+        return repository.findByChatId(chatId)
+                .map(link -> Boolean.TRUE.equals(link.getAiConsent()))
+                .orElse(false);
+    }
+
+    @Transactional
+    public void setAiConsent(long chatId, boolean consent) {
+        repository.findByChatId(chatId).ifPresent(link -> {
+            link.setAiConsent(consent);
+            repository.save(link);
+        });
     }
 
     private String randomCode(int length) {

@@ -48,6 +48,20 @@ public class TelegramBotService {
             Sem data, o lançamento vai para hoje.
             """;
 
+    private static final String HELP_AI =
+            "\nFrases mais livres? Veja /ia (interpretação por IA, opcional).";
+
+    private static final String AI_NOTICE = """
+            🤖 Interpretação por IA (opcional)
+
+            Quando o bot não entende sua frase, ela pode ser enviada ao Gemini (Google, camada gratuita) para ser interpretada. Só o texto daquela mensagem é enviado, sem seu nome, e-mail ou histórico.
+
+            ⚠️ Na camada gratuita, o Google pode usar esse texto para melhorar seus produtos, e ele pode ser revisado por pessoas. Este é um projeto de portfólio: não digite dados sensíveis.
+
+            Para ativar: /ia on
+            Para desativar: /ia off
+            """;
+
     private static final String NOT_LINKED =
             "Sua conta ainda não está conectada. Use o botão \"Conectar Telegram\" no dashboard.";
 
@@ -60,6 +74,8 @@ public class TelegramBotService {
     private final TelegramCommandParser parser;
     private final TelegramFreeTextParser freeTextParser;
     private final TransactionService transactionService;
+    private final GeminiClient gemini;
+    private final AiUsageLimiter aiLimiter;
 
     // O Telegram reenvia o mesmo update se a resposta demorar (ex.: serviço acordando).
     // Isso também impede que um /desfazer reenviado apague dois lançamentos.
@@ -86,14 +102,19 @@ public class TelegramBotService {
 
         switch (command) {
             case "/start" -> handleStart(chatId, text);
-            case "/ajuda", "/help" -> client.sendMessage(chatId, HELP);
+            case "/ajuda", "/help" -> client.sendMessage(chatId, help());
             case "/gasto", "/despesa", "/receita" ->
                     withUser(chatId, user -> handleCommandTransaction(chatId, user, text));
             case "/saldo" -> withUser(chatId, user -> handleBalance(chatId, user));
             case "/ultimos" -> withUser(chatId, user -> handleLatest(chatId, user));
             case "/desfazer" -> withUser(chatId, user -> handleUndo(chatId, user));
+            case "/ia" -> withUser(chatId, user -> handleAi(chatId, text));
             default -> client.sendMessage(chatId, "Comando não reconhecido. Use /ajuda.");
         }
+    }
+
+    private String help() {
+        return gemini.isAvailable() ? HELP + HELP_AI : HELP;
     }
 
     /** Executa a ação só se o chat estiver vinculado a um usuário. */
@@ -117,7 +138,7 @@ public class TelegramBotService {
         Optional<User> user = linkService.consumeCode(parts[1], chatId);
         if (user.isPresent()) {
             client.sendMessage(chatId,
-                    "✅ Conta conectada, " + user.get().getName() + "!\n\n" + HELP);
+                    "✅ Conta conectada, " + user.get().getName() + "!\n\n" + help());
         } else {
             client.sendMessage(chatId,
                     "Código inválido ou expirado. Gere um novo no dashboard.");
@@ -128,27 +149,91 @@ public class TelegramBotService {
         try {
             TelegramCommandParser.ParsedTransaction parsed = parser.parse(text);
             register(chatId, user, parsed.type(), parsed.amount(), parsed.description(),
-                    LocalDate.now(ZONE), false);
+                    LocalDate.now(ZONE), null);
         } catch (IllegalArgumentException e) {
             client.sendMessage(chatId, "⚠️ " + e.getMessage());
         }
     }
 
     private void handleFreeText(long chatId, User user, String text) {
-        Optional<TelegramFreeTextParser.Result> parsed = freeTextParser.parse(text, LocalDate.now(ZONE));
+        LocalDate today = LocalDate.now(ZONE);
 
-        if (parsed.isPresent()) {
-            TelegramFreeTextParser.Result r = parsed.get();
-            register(chatId, user, r.type(), r.amount(), r.description(), r.date(), true);
+        // 1ª camada: regras. Grátis, local e previsível.
+        Optional<TelegramFreeTextParser.Result> byRules = freeTextParser.parse(text, today);
+        if (byRules.isPresent()) {
+            TelegramFreeTextParser.Result r = byRules.get();
+            register(chatId, user, r.type(), r.amount(), r.description(), r.date(),
+                    "Errou? Use /desfazer.");
             return;
         }
 
-        // Fase 2: é aqui que o Gemini entra, quando o parser por regras não tem certeza.
-        client.sendMessage(chatId, NOT_UNDERSTOOD);
+        // 2ª camada: IA, só se estiver habilitada no ambiente E o usuário tiver aceitado (/ia on).
+        if (!gemini.isAvailable()) {
+            client.sendMessage(chatId, NOT_UNDERSTOOD);
+            return;
+        }
+        if (!linkService.hasAiConsent(chatId)) {
+            client.sendMessage(chatId, NOT_UNDERSTOOD
+                    + "\n\nQuer que uma IA tente interpretar frases mais livres? Veja /ia.");
+            return;
+        }
+
+        switch (aiLimiter.tryAcquire(user.getId())) {
+            case USER_LIMIT -> {
+                client.sendMessage(chatId,
+                        "Você atingiu o limite diário de interpretações por IA. Use /gasto ou frases simples.");
+                return;
+            }
+            case GLOBAL_LIMIT -> {
+                client.sendMessage(chatId,
+                        "O limite diário de IA do projeto foi atingido. Use /gasto ou frases simples.");
+                return;
+            }
+            case ALLOWED -> { }
+        }
+
+        Optional<TelegramFreeTextParser.Result> byAi = gemini.extract(text, today)
+                .flatMap(extraction -> extraction.toResult(today));
+        if (byAi.isEmpty()) {
+            client.sendMessage(chatId, NOT_UNDERSTOOD);
+            return;
+        }
+
+        TelegramFreeTextParser.Result r = byAi.get();
+        register(chatId, user, r.type(), r.amount(), r.description(), r.date(),
+                "🤖 Interpretado por IA. Confira e use /desfazer se estiver errado.");
+    }
+
+    private void handleAi(long chatId, String text) {
+        if (!gemini.isAvailable()) {
+            client.sendMessage(chatId, "A interpretação por IA não está habilitada neste ambiente.");
+            return;
+        }
+
+        String[] parts = text.split("\\s+");
+        String arg = parts.length > 1 ? parts[1].toLowerCase() : "";
+
+        switch (arg) {
+            case "on" -> {
+                linkService.setAiConsent(chatId, true);
+                client.sendMessage(chatId,
+                        "✅ IA ativada. Frases que o bot não entender serão interpretadas pelo Gemini. "
+                                + "Desative quando quiser com /ia off.");
+            }
+            case "off" -> {
+                linkService.setAiConsent(chatId, false);
+                client.sendMessage(chatId,
+                        "IA desativada. Seus textos não serão mais enviados ao Gemini.");
+            }
+            default -> {
+                String status = linkService.hasAiConsent(chatId) ? "ativada ✅" : "desativada";
+                client.sendMessage(chatId, AI_NOTICE + "\nStatus atual: " + status);
+            }
+        }
     }
 
     private void register(long chatId, User user, TransactionType type, BigDecimal amount,
-                          String description, LocalDate date, boolean showUndoHint) {
+                          String description, LocalDate date, String footer) {
         TransactionRequestDTO dto = new TransactionRequestDTO();
         dto.setDescription(description);
         dto.setAmount(amount);
@@ -159,8 +244,8 @@ public class TelegramBotService {
 
         String reply = "✅ " + typeLabel(type) + " registrada: " + money(amount)
                 + " — " + description + " (" + date.format(DAY_MONTH) + ")";
-        if (showUndoHint) {
-            reply += "\nErrou? Use /desfazer.";
+        if (footer != null) {
+            reply += "\n" + footer;
         }
         client.sendMessage(chatId, reply);
     }
