@@ -35,4 +35,9 @@ public class Transaction {
     @JoinColumn(name = "user_id")
     private User user;
 
+    // Opcional: transações antigas (e as do bot, por enquanto) ficam sem categoria.
+    @ManyToOne
+    @JoinColumn(name = "category_id")
+    private Category category;
+
 }

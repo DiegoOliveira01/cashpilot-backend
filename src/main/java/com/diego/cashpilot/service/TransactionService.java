@@ -1,17 +1,23 @@
 package com.diego.cashpilot.service;
 
+import com.diego.cashpilot.dto.CategoryResponseDTO;
+import com.diego.cashpilot.dto.CategorySummaryDTO;
 import com.diego.cashpilot.dto.TransactionRequestDTO;
 import com.diego.cashpilot.dto.TransactionResponseDTO;
 import com.diego.cashpilot.dto.TransactionSummaryDTO;
+import com.diego.cashpilot.model.Category;
 import com.diego.cashpilot.model.Transaction;
 import com.diego.cashpilot.model.User;
 import com.diego.cashpilot.model.enums.TransactionType;
+import com.diego.cashpilot.repository.CategoryRepository;
 import com.diego.cashpilot.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.YearMonth;
@@ -23,6 +29,7 @@ import java.util.Optional;
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
+    private final CategoryRepository categoryRepository;
 
     public TransactionResponseDTO create(TransactionRequestDTO dto){
         return createForUser(getLoggedUser(), dto);
@@ -36,6 +43,7 @@ public class TransactionService {
                 .amount(dto.getAmount())
                 .type(dto.getType())
                 .date(dto.getDate())
+                .category(resolveCategory(user, dto.getCategoryId(), dto.getType()))
                 .user(user)
                 .build();
 
@@ -54,6 +62,7 @@ public class TransactionService {
         transaction.setAmount(dto.getAmount());
         transaction.setType(dto.getType());
         transaction.setDate(dto.getDate());
+        transaction.setCategory(resolveCategory(user, dto.getCategoryId(), dto.getType()));
 
         transaction = transactionRepository.save(transaction);
 
@@ -87,7 +96,25 @@ public class TransactionService {
                 .amount(transaction.getAmount())
                 .type(transaction.getType())
                 .date(transaction.getDate())
+                .category(CategoryResponseDTO.of(transaction.getCategory()))
                 .build();
+    }
+
+    /**
+     * Sem categoryId = sem categoria. Com categoryId, ela precisa ser padrão ou do usuário
+     * e ter o mesmo tipo da transação (não dá para classificar uma receita como "Alimentação").
+     */
+    private Category resolveCategory(User user, Long categoryId, TransactionType type){
+        if (categoryId == null) return null;
+
+        Category category = categoryRepository.findAvailableById(categoryId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Categoria inválida"));
+
+        if (category.getType() != type) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A categoria não é compatível com o tipo da transação");
+        }
+        return category;
     }
 
     public TransactionSummaryDTO getSummary(){
@@ -125,6 +152,18 @@ public class TransactionService {
                 .expense(expense)
                 .balance(balance)
                 .build();
+    }
+
+    public List<CategorySummaryDTO> getSummaryByCategory(YearMonth month){
+        return getSummaryByCategoryForUser(getLoggedUser(), month);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CategorySummaryDTO> getSummaryByCategoryForUser(User user, YearMonth month){
+        List<Transaction> inMonth = transactionRepository
+                .findByUserAndDateBetween(user, month.atDay(1), month.atEndOfMonth());
+
+        return CategorySummarizer.summarize(inMonth);
     }
 
     // Mais recentes primeiro (por data e, no empate, pelo último criado).

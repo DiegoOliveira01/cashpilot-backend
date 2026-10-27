@@ -21,6 +21,8 @@ public class TransactionRequestDTO {
     @NotNull
     private TransactionType type;
 
+    private Long categoryId; // opcional
+
     @NotNull
     private LocalDate date;
 
