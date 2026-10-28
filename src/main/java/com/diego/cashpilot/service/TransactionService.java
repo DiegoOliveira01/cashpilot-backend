@@ -186,6 +186,24 @@ public class TransactionService {
                 });
     }
 
+    // Último lançamento CRIADO (maior id): é o alvo de /desfazer e de /categoria no bot.
+    @Transactional(readOnly = true)
+    public Optional<TransactionResponseDTO> findLastCreatedForUser(User user){
+        return transactionRepository.findFirstByUserOrderByIdDesc(user).map(this::mapToResponse);
+    }
+
+    // Troca a categoria do último lançamento criado. category == null remove a categoria.
+    @Transactional
+    public Optional<TransactionResponseDTO> recategorizeLatestForUser(User user, Category category){
+        return transactionRepository.findFirstByUserOrderByIdDesc(user).map(transaction -> {
+            if (category != null && category.getType() != transaction.getType()) {
+                throw new IllegalArgumentException("Essa categoria não combina com o tipo do último lançamento.");
+            }
+            transaction.setCategory(category);
+            return mapToResponse(transactionRepository.save(transaction));
+        });
+    }
+
     public void delete(Long id){
         User user = getLoggedUser();
 

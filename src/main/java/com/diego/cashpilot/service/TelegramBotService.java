@@ -1,9 +1,11 @@
 package com.diego.cashpilot.service;
 
+import com.diego.cashpilot.dto.CategorySummaryDTO;
 import com.diego.cashpilot.dto.TelegramUpdate;
 import com.diego.cashpilot.dto.TransactionRequestDTO;
 import com.diego.cashpilot.dto.TransactionResponseDTO;
 import com.diego.cashpilot.dto.TransactionSummaryDTO;
+import com.diego.cashpilot.model.Category;
 import com.diego.cashpilot.model.User;
 import com.diego.cashpilot.model.enums.TransactionType;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,8 @@ public class TelegramBotService {
     private static final DateTimeFormatter MONTH_FORMAT = DateTimeFormatter.ofPattern("MMMM 'de' yyyy", PT_BR);
     private static final DateTimeFormatter DAY_MONTH = DateTimeFormatter.ofPattern("dd/MM");
     private static final int LATEST_LIMIT = 5;
+    private static final int TOP_CATEGORIES = 3;
+    private static final String NO_ICON = "🏷️";
 
     private static final String HELP = """
             Você pode escrever livremente:
@@ -38,12 +42,17 @@ public class TelegramBotService {
             recebi 1.500 de salário ontem
             paguei 120 de luz dia 15
 
-            Ou usar comandos:
+            O bot descobre a categoria pela descrição. Para escolher, use #:
+            /gasto 35,90 jantar #lazer
+
+            Comandos:
             /gasto 35,90 mercado
             /receita 1500 salário
             /saldo — resumo do mês atual
             /ultimos — últimos 5 lançamentos
             /desfazer — remove o último lançamento
+            /categorias — lista suas categorias
+            /categoria nome — muda a categoria do último lançamento
 
             Sem data, o lançamento vai para hoje.
             """;
@@ -54,7 +63,7 @@ public class TelegramBotService {
     private static final String AI_NOTICE = """
             🤖 Interpretação por IA (opcional)
 
-            Quando o bot não entende sua frase, ela pode ser enviada ao Gemini (Google, camada gratuita) para ser interpretada. Só o texto daquela mensagem é enviado, sem seu nome, e-mail ou histórico.
+            Quando o bot não entende sua frase, ela pode ser enviada ao Gemini (Google, camada gratuita) para ser interpretada. Só o texto daquela mensagem e os nomes das suas categorias são enviados, sem seu nome, e-mail ou histórico.
 
             ⚠️ Na camada gratuita, o Google pode usar esse texto para melhorar seus produtos, e ele pode ser revisado por pessoas. Este é um projeto de portfólio: não digite dados sensíveis.
 
@@ -74,8 +83,12 @@ public class TelegramBotService {
     private final TelegramCommandParser parser;
     private final TelegramFreeTextParser freeTextParser;
     private final TransactionService transactionService;
+    private final CategoryService categoryService;
     private final GeminiClient gemini;
     private final AiUsageLimiter aiLimiter;
+
+    // Categoria escolhida para um lançamento e, se a #tag não existir, um aviso para o usuário.
+    private record CategoryChoice(Category category, String warning) {}
 
     // O Telegram reenvia o mesmo update se a resposta demorar (ex.: serviço acordando).
     // Isso também impede que um /desfazer reenviado apague dois lançamentos.
@@ -108,6 +121,8 @@ public class TelegramBotService {
             case "/saldo" -> withUser(chatId, user -> handleBalance(chatId, user));
             case "/ultimos" -> withUser(chatId, user -> handleLatest(chatId, user));
             case "/desfazer" -> withUser(chatId, user -> handleUndo(chatId, user));
+            case "/categorias" -> withUser(chatId, user -> client.sendMessage(chatId, categoriesMessage(user)));
+            case "/categoria" -> withUser(chatId, user -> handleSetCategory(chatId, user, text));
             case "/ia" -> withUser(chatId, user -> handleAi(chatId, text));
             default -> client.sendMessage(chatId, "Comando não reconhecido. Use /ajuda.");
         }
@@ -145,24 +160,34 @@ public class TelegramBotService {
         }
     }
 
-    private void handleCommandTransaction(long chatId, User user, String text) {
+    private void handleCommandTransaction(long chatId, User user, String rawText) {
+        HashtagExtractor.Result tagged = HashtagExtractor.extract(rawText);
+
         try {
-            TelegramCommandParser.ParsedTransaction parsed = parser.parse(text);
+            TelegramCommandParser.ParsedTransaction parsed = parser.parse(tagged.text());
+            List<Category> available = categoryService.findAvailableForUser(user);
+            CategoryChoice choice = chooseCategory(available, parsed.type(), tagged.tag(), null,
+                    parsed.description());
+
             register(chatId, user, parsed.type(), parsed.amount(), parsed.description(),
-                    LocalDate.now(ZONE), null);
+                    LocalDate.now(ZONE), choice, null);
         } catch (IllegalArgumentException e) {
             client.sendMessage(chatId, "⚠️ " + e.getMessage());
         }
     }
 
-    private void handleFreeText(long chatId, User user, String text) {
+    private void handleFreeText(long chatId, User user, String rawText) {
+        HashtagExtractor.Result tagged = HashtagExtractor.extract(rawText);
+        String text = tagged.text();
         LocalDate today = LocalDate.now(ZONE);
+        List<Category> available = categoryService.findAvailableForUser(user);
 
         // 1ª camada: regras. Grátis, local e previsível.
         Optional<TelegramFreeTextParser.Result> byRules = freeTextParser.parse(text, today);
         if (byRules.isPresent()) {
             TelegramFreeTextParser.Result r = byRules.get();
-            register(chatId, user, r.type(), r.amount(), r.description(), r.date(),
+            CategoryChoice choice = chooseCategory(available, r.type(), tagged.tag(), null, r.description());
+            register(chatId, user, r.type(), r.amount(), r.description(), r.date(), choice,
                     "Errou? Use /desfazer.");
             return;
         }
@@ -192,7 +217,10 @@ public class TelegramBotService {
             case ALLOWED -> { }
         }
 
-        Optional<TelegramFreeTextParser.Result> byAi = gemini.extract(text, today)
+        Optional<TelegramFreeTextParser.Result> byAi = gemini
+                .extract(text, today,
+                        namesOf(available, TransactionType.EXPENSE),
+                        namesOf(available, TransactionType.INCOME))
                 .flatMap(extraction -> extraction.toResult(today));
         if (byAi.isEmpty()) {
             client.sendMessage(chatId, NOT_UNDERSTOOD);
@@ -200,8 +228,122 @@ public class TelegramBotService {
         }
 
         TelegramFreeTextParser.Result r = byAi.get();
-        register(chatId, user, r.type(), r.amount(), r.description(), r.date(),
+        CategoryChoice choice = chooseCategory(available, r.type(), tagged.tag(), r.categoryHint(),
+                r.description());
+        register(chatId, user, r.type(), r.amount(), r.description(), r.date(), choice,
                 "🤖 Interpretado por IA. Confira e use /desfazer se estiver errado.");
+    }
+
+    /**
+     * Ordem de prioridade: #tag do usuário → sugestão da IA → palavras-chave da descrição.
+     * Se a #tag não existir, o lançamento segue com a detecção automática e o usuário é avisado.
+     */
+    private CategoryChoice chooseCategory(List<Category> available, TransactionType type, String tag,
+                                          String aiHint, String description) {
+        String warning = null;
+
+        if (tag != null) {
+            Optional<Category> byTag = CategoryMatcher.findByName(tag, type, available);
+            if (byTag.isPresent()) return new CategoryChoice(byTag.get(), null);
+            warning = "⚠️ Categoria #" + tag + " não encontrada (veja /categorias).";
+        }
+
+        if (aiHint != null) {
+            Optional<Category> byAi = CategoryMatcher.findByName(aiHint, type, available);
+            if (byAi.isPresent()) return new CategoryChoice(byAi.get(), warning);
+        }
+
+        return new CategoryChoice(CategoryMatcher.match(description, type, available).orElse(null), warning);
+    }
+
+    private void register(long chatId, User user, TransactionType type, BigDecimal amount,
+                          String description, LocalDate date, CategoryChoice choice, String footer) {
+        Category category = choice.category();
+
+        TransactionRequestDTO dto = new TransactionRequestDTO();
+        dto.setDescription(description);
+        dto.setAmount(amount);
+        dto.setType(type);
+        dto.setDate(date);
+        dto.setCategoryId(category == null ? null : category.getId());
+
+        transactionService.createForUser(user, dto);
+
+        StringBuilder reply = new StringBuilder("✅ ")
+                .append(typeLabel(type)).append(" registrada: ").append(money(amount))
+                .append(" — ").append(description)
+                .append(" (").append(date.format(DAY_MONTH)).append(")");
+
+        if (category != null) {
+            reply.append("\n").append(iconOf(category)).append(" ").append(category.getName());
+        } else {
+            reply.append("\nSem categoria. Defina com /categoria nome.");
+        }
+        if (choice.warning() != null) reply.append("\n").append(choice.warning());
+        if (footer != null) reply.append("\n").append(footer);
+
+        client.sendMessage(chatId, reply.toString());
+    }
+
+    private String categoriesMessage(User user) {
+        List<Category> available = categoryService.findAvailableForUser(user);
+
+        return "📂 Suas categorias\n\n"
+                + "Despesas:\n" + listOf(available, TransactionType.EXPENSE) + "\n\n"
+                + "Receitas:\n" + listOf(available, TransactionType.INCOME) + "\n\n"
+                + "Use #nome no lançamento (/gasto 40 jantar #lazer) ou /categoria nome para mudar a do último.\n"
+                + "Para criar ou editar categorias, use o dashboard.";
+    }
+
+    private String listOf(List<Category> categories, TransactionType type) {
+        List<String> items = categories.stream()
+                .filter(c -> c.getType() == type)
+                .map(c -> iconOf(c) + " " + c.getName())
+                .toList();
+        return items.isEmpty() ? "(nenhuma)" : String.join("\n", items);
+    }
+
+    private void handleSetCategory(long chatId, User user, String text) {
+        String arg = text.contains(" ") ? text.substring(text.indexOf(' ') + 1).trim() : "";
+        if (arg.isEmpty()) {
+            client.sendMessage(chatId,
+                    "Uso: /categoria nome (muda a categoria do último lançamento)\n\n" + categoriesMessage(user));
+            return;
+        }
+        if (arg.startsWith("#")) arg = arg.substring(1);
+
+        Optional<TransactionResponseDTO> last = transactionService.findLastCreatedForUser(user);
+        if (last.isEmpty()) {
+            client.sendMessage(chatId, "Não há lançamentos para categorizar.");
+            return;
+        }
+
+        TransactionResponseDTO target = last.get();
+        Category category = null;
+        boolean remove = arg.equalsIgnoreCase("nenhuma") || arg.equalsIgnoreCase("sem categoria");
+
+        if (!remove) {
+            Optional<Category> found = CategoryMatcher.findByName(arg, target.getType(),
+                    categoryService.findAvailableForUser(user));
+            if (found.isEmpty()) {
+                client.sendMessage(chatId, "Não achei essa categoria entre as de "
+                        + typeLabel(target.getType()).toLowerCase() + ". Veja /categorias.");
+                return;
+            }
+            category = found.get();
+        }
+
+        try {
+            transactionService.recategorizeLatestForUser(user, category);
+        } catch (IllegalArgumentException e) {
+            client.sendMessage(chatId, "⚠️ " + e.getMessage());
+            return;
+        }
+
+        String summary = target.getDescription() + " (" + money(target.getAmount()) + ")";
+        client.sendMessage(chatId, category == null
+                ? "🏷️ Categoria removida de: " + summary
+                : "🏷️ " + summary + " agora é " + iconOf(category) + " " + category.getName() + ".");
     }
 
     private void handleAi(long chatId, String text) {
@@ -232,33 +374,29 @@ public class TelegramBotService {
         }
     }
 
-    private void register(long chatId, User user, TransactionType type, BigDecimal amount,
-                          String description, LocalDate date, String footer) {
-        TransactionRequestDTO dto = new TransactionRequestDTO();
-        dto.setDescription(description);
-        dto.setAmount(amount);
-        dto.setType(type);
-        dto.setDate(date);
-
-        transactionService.createForUser(user, dto);
-
-        String reply = "✅ " + typeLabel(type) + " registrada: " + money(amount)
-                + " — " + description + " (" + date.format(DAY_MONTH) + ")";
-        if (footer != null) {
-            reply += "\n" + footer;
-        }
-        client.sendMessage(chatId, reply);
-    }
-
     private void handleBalance(long chatId, User user) {
         YearMonth month = YearMonth.now(ZONE);
         TransactionSummaryDTO summary = transactionService.getSummaryForUser(user, month);
 
-        client.sendMessage(chatId,
-                "💰 Resumo de " + month.format(MONTH_FORMAT) + "\n\n"
-                        + "Receitas: " + money(summary.getIncome()) + "\n"
-                        + "Despesas: " + money(summary.getExpense()) + "\n"
-                        + "Saldo: " + money(summary.getBalance()));
+        StringBuilder reply = new StringBuilder("💰 Resumo de ").append(month.format(MONTH_FORMAT)).append("\n\n")
+                .append("Receitas: ").append(money(summary.getIncome())).append("\n")
+                .append("Despesas: ").append(money(summary.getExpense())).append("\n")
+                .append("Saldo: ").append(money(summary.getBalance()));
+
+        List<CategorySummaryDTO> top = transactionService.getSummaryByCategoryForUser(user, month).stream()
+                .filter(c -> c.getType() == TransactionType.EXPENSE)
+                .limit(TOP_CATEGORIES)
+                .toList();
+
+        if (!top.isEmpty()) {
+            reply.append("\n\nMaiores gastos:");
+            for (CategorySummaryDTO c : top) {
+                reply.append("\n").append(c.getIcon() == null ? NO_ICON : c.getIcon())
+                        .append(" ").append(c.getName()).append(" — ").append(money(c.getTotal()));
+            }
+        }
+
+        client.sendMessage(chatId, reply.toString());
     }
 
     private void handleLatest(long chatId, User user) {
@@ -274,8 +412,12 @@ public class TelegramBotService {
             sb.append(income ? "🟢 " : "🔴 ")
                     .append(t.getDate().format(DAY_MONTH)).append(" · ")
                     .append(t.getDescription()).append(" · ")
-                    .append(income ? "+" : "-").append(money(t.getAmount()))
-                    .append("\n");
+                    .append(income ? "+" : "-").append(money(t.getAmount()));
+            if (t.getCategory() != null) {
+                sb.append(" · ").append(t.getCategory().getIcon() == null ? NO_ICON : t.getCategory().getIcon())
+                        .append(" ").append(t.getCategory().getName());
+            }
+            sb.append("\n");
         }
         client.sendMessage(chatId, sb.toString().trim());
     }
@@ -291,6 +433,14 @@ public class TelegramBotService {
         client.sendMessage(chatId,
                 "🗑️ Removido: " + typeLabel(t.getType()) + " de " + money(t.getAmount())
                         + " — " + t.getDescription() + " (" + t.getDate().format(DAY_MONTH) + ")");
+    }
+
+    private List<String> namesOf(List<Category> categories, TransactionType type) {
+        return categories.stream().filter(c -> c.getType() == type).map(Category::getName).toList();
+    }
+
+    private String iconOf(Category category) {
+        return category.getIcon() == null ? NO_ICON : category.getIcon();
     }
 
     private String typeLabel(TransactionType type) {

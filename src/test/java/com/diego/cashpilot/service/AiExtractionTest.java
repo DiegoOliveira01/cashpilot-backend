@@ -15,7 +15,7 @@ class AiExtractionTest {
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 22);
 
     private AiExtraction of(boolean understood, String type, String amount, String desc, String date) {
-        return new AiExtraction(understood, type, amount == null ? null : new BigDecimal(amount), desc, date);
+        return new AiExtraction(understood, type, amount == null ? null : new BigDecimal(amount), desc, date, null);
     }
 
     @Test
@@ -35,6 +35,20 @@ class AiExtractionTest {
         assertEquals(TransactionType.INCOME, r.type());
         assertEquals("Receita", r.description());
         assertEquals(TODAY, r.date());
+    }
+
+    @Test
+    void passesTheCategorySuggestionAlong() {
+        var extraction = new AiExtraction(true, "EXPENSE", new BigDecimal("40"), "jantar", null, " Lazer ");
+
+        assertEquals("Lazer", extraction.toResult(TODAY).orElseThrow().categoryHint());
+    }
+
+    @Test
+    void blankCategoryBecomesNoSuggestion() {
+        var extraction = new AiExtraction(true, "EXPENSE", new BigDecimal("40"), "jantar", null, "  ");
+
+        assertEquals(null, extraction.toResult(TODAY).orElseThrow().categoryHint());
     }
 
     @Test

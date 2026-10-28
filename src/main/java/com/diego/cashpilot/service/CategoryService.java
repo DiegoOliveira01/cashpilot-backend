@@ -34,6 +34,12 @@ public class CategoryService {
         return categories.stream().map(CategoryResponseDTO::of).toList();
     }
 
+    /** Categorias acessíveis ao usuário (padrões + próprias); usado pelo bot, que não tem JWT. */
+    @Transactional(readOnly = true)
+    public List<Category> findAvailableForUser(User user) {
+        return categoryRepository.findAvailable(user);
+    }
+
     @Transactional
     public CategoryResponseDTO create(CategoryRequestDTO dto) {
         User user = getLoggedUser();

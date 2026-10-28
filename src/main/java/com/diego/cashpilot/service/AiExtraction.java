@@ -11,9 +11,11 @@ import java.util.Optional;
 
 /**
  * O que o modelo devolveu. NUNCA é confiável: toResult() valida tudo antes de virar lançamento.
+ * O nome da categoria é só uma sugestão: o bot só a usa se existir entre as categorias do usuário.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record AiExtraction(boolean understood, String type, BigDecimal amount, String description, String date) {
+public record AiExtraction(boolean understood, String type, BigDecimal amount, String description,
+                           String date, String category) {
 
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("10000000");
 
@@ -54,6 +56,8 @@ public record AiExtraction(boolean understood, String type, BigDecimal amount, S
         }
         if (desc.length() > 255) desc = desc.substring(0, 255);
 
-        return Optional.of(new TelegramFreeTextParser.Result(parsedType, value, desc, parsedDate));
+        String hint = category == null || category.isBlank() ? null : category.trim();
+
+        return Optional.of(new TelegramFreeTextParser.Result(parsedType, value, desc, parsedDate, hint));
     }
 }

@@ -23,7 +23,14 @@ import java.util.regex.Pattern;
 @Component
 public class TelegramFreeTextParser {
 
-    public record Result(TransactionType type, BigDecimal amount, String description, LocalDate date) {}
+    // categoryHint: nome de categoria sugerido pela IA (null quando o parser por regras interpreta).
+    public record Result(TransactionType type, BigDecimal amount, String description, LocalDate date,
+                         String categoryHint) {
+
+        public Result(TransactionType type, BigDecimal amount, String description, LocalDate date) {
+            this(type, amount, description, date, null);
+        }
+    }
 
     private record Candidate(int index, BigDecimal value, boolean marked) {}
 
