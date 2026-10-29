@@ -11,21 +11,22 @@ public final class DefaultCategories {
 
     public static final List<Item> ALL = List.of(
             // Despesas
-            new Item("Alimentação", TransactionType.EXPENSE, "🍽️"),
-            new Item("Moradia", TransactionType.EXPENSE, "🏠"),
-            new Item("Contas e serviços", TransactionType.EXPENSE, "💡"),
-            new Item("Transporte", TransactionType.EXPENSE, "🚗"),
-            new Item("Saúde", TransactionType.EXPENSE, "💊"),
-            new Item("Lazer", TransactionType.EXPENSE, "🎮"),
-            new Item("Educação", TransactionType.EXPENSE, "📚"),
-            new Item("Compras", TransactionType.EXPENSE, "🛍️"),
-            new Item("Outros", TransactionType.EXPENSE, "📦"),
+            new Item("Alimentação", TransactionType.EXPENSE, "lucideUtensils"),
+            new Item("Moradia", TransactionType.EXPENSE, "lucideHome"),
+            new Item("Contas e serviços", TransactionType.EXPENSE, "lucideZap"),
+            new Item("Transporte", TransactionType.EXPENSE, "lucideCar"),
+            new Item("Saúde", TransactionType.EXPENSE, "lucideHeartPulse"),
+            new Item("Lazer", TransactionType.EXPENSE, "lucideGamepad2"),
+            new Item("Educação", TransactionType.EXPENSE, "lucideGraduationCap"),
+            new Item("Compras", TransactionType.EXPENSE, "lucideShoppingCart"),
+            new Item("Outros", TransactionType.EXPENSE, "lucideTag"),
+
             // Receitas
-            new Item("Salário", TransactionType.INCOME, "💼"),
-            new Item("Freelance", TransactionType.INCOME, "💻"),
-            new Item("Investimentos", TransactionType.INCOME, "📈"),
-            new Item("Presente", TransactionType.INCOME, "🎁"),
-            new Item("Outros", TransactionType.INCOME, "📦")
+            new Item("Salário", TransactionType.INCOME, "lucideBriefcase"),
+            new Item("Freelance", TransactionType.INCOME, "lucideLaptop"), // Novo ícone
+            new Item("Investimentos", TransactionType.INCOME, "lucidePiggyBank"),
+            new Item("Presente", TransactionType.INCOME, "lucideGift"),
+            new Item("Outros", TransactionType.INCOME, "lucideTag")
     );
 
     private DefaultCategories() {}
