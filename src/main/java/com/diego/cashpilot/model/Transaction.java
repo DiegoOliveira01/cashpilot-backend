@@ -35,9 +35,17 @@ public class Transaction {
     @JoinColumn(name = "user_id")
     private User user;
 
-    // Opcional: transações antigas (e as do bot, por enquanto) ficam sem categoria.
+    // transações antigas (e as do bot, por enquanto) ficam sem categoria.
     @ManyToOne
     @JoinColumn(name = "category_id")
     private Category category;
+
+    @ManyToOne
+    @JoinColumn(name = "recurring_transaction_id")
+    private RecurringTransaction recurringTransaction;
+
+    // A data exata que esta ocorrência representa (pode ser diferente da data de criação)
+    @Column(name = "recurrence_date")
+    private LocalDate recurrenceDate;
 
 }

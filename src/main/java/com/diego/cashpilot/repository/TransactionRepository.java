@@ -25,6 +25,9 @@ public interface TransactionRepository  extends JpaRepository<Transaction, Long>
 
     List<Transaction> findByUserAndDateBetween(User user, LocalDate start, LocalDate end);
 
+    // método para verificar a existência da ocorrência (Prevenção de Duplicidade)
+    boolean existsByRecurringTransactionIdAndRecurrenceDate(Long recurringTransactionId, LocalDate recurrenceDate);
+
     /** Ao apagar uma categoria, as transações dela ficam "sem categoria". */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Transaction t set t.category = null where t.category = :category")

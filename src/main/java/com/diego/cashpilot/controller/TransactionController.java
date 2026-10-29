@@ -4,6 +4,7 @@ import com.diego.cashpilot.dto.CategorySummaryDTO;
 import com.diego.cashpilot.dto.TransactionRequestDTO;
 import com.diego.cashpilot.dto.TransactionResponseDTO;
 import com.diego.cashpilot.dto.TransactionSummaryDTO;
+import com.diego.cashpilot.service.RecurrenceProcessorService;
 import com.diego.cashpilot.service.TransactionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class TransactionController {
     private static final ZoneId ZONE = ZoneId.of("America/Sao_Paulo");
 
     private final TransactionService transactionService;
+    private final RecurrenceProcessorService recurrenceProcessor;
 
     @PostMapping
     public TransactionResponseDTO create(@RequestBody @Valid TransactionRequestDTO dto){
@@ -45,6 +47,8 @@ public class TransactionController {
 
     @GetMapping("/summary")
     public TransactionSummaryDTO getSummary(){
+        recurrenceProcessor.processDueRecurrences(); // Antes de retornar as transações, gera as pendentes
+
         return transactionService.getSummary();
     }
 
