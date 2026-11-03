@@ -43,7 +43,8 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
-                                "/telegram/webhook"
+                                "/telegram/webhook",
+                                "/error"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
