@@ -47,7 +47,8 @@ public class TransactionController {
     }
 
     @GetMapping
-    public List<TransactionResponseDTO> getAll(){
+    public List<TransactionResponseDTO> getAll() {
+        recurrenceProcessor.processDueRecurrences();
         return transactionService.findAllByUser();
     }
 
