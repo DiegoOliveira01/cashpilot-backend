@@ -9,6 +9,7 @@ import com.diego.cashpilot.service.TransactionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.YearMonth;
@@ -33,6 +34,11 @@ public class TransactionController {
     @PutMapping("/{id}")
     public TransactionResponseDTO update(@PathVariable Long id, @RequestBody @Valid TransactionRequestDTO dto){
         return transactionService.update(id, dto);
+    }
+
+    @PatchMapping("/{id}/pay")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void markAsPaid(@PathVariable Long id) {transactionService.markAsPaid(id);
     }
 
     @GetMapping("/{id}")

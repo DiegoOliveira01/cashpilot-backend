@@ -23,7 +23,7 @@ public class RecurringTransactionController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public RecurringTransactionResponseDTO  create(@RequestBody RecurringTransactionRequestDTO  request) {
+    public RecurringTransactionResponseDTO create(@RequestBody RecurringTransactionRequestDTO  request) {
         return service.create(request);
     }
 

@@ -50,6 +50,7 @@ public class RecurrenceProcessorService {
                     t.setDate(rec.getNextOccurrenceDate()); // A data da transação é a data da ocorrência
                     t.setRecurringTransaction(rec);
                     t.setRecurrenceDate(rec.getNextOccurrenceDate());
+                    t.setIsPaid(false);
 
                     transactionRepo.save(t);
                     log.info("Transação recorrente gerada: {} para {}", rec.getDescription(), rec.getNextOccurrenceDate());

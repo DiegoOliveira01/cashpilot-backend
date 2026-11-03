@@ -96,6 +96,7 @@ public class TransactionService {
                 .amount(transaction.getAmount())
                 .type(transaction.getType())
                 .date(transaction.getDate())
+                .isPaid(transaction.getIsPaid())
                 .category(CategoryResponseDTO.of(transaction.getCategory()))
                 .build();
     }
@@ -202,6 +203,14 @@ public class TransactionService {
             transaction.setCategory(category);
             return mapToResponse(transactionRepository.save(transaction));
         });
+    }
+
+    public void markAsPaid(Long id) {
+        User user = getLoggedUser();
+        Transaction t = transactionRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new RuntimeException("Transação não encontrada"));
+        t.setIsPaid(true);
+        transactionRepository.save(t);
     }
 
     public void delete(Long id){

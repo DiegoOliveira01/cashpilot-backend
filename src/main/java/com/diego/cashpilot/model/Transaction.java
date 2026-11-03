@@ -31,6 +31,9 @@ public class Transaction {
 
     private LocalDate date;
 
+    @Column(nullable = false)
+    private Boolean isPaid = true; // Manual = true por padrão, Recorrente = false
+
     @ManyToOne
     @JoinColumn(name = "user_id")
     private User user;

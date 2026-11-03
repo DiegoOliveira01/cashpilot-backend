@@ -16,5 +16,6 @@ public class TransactionResponseDTO {
     private BigDecimal amount;
     private TransactionType type;
     private LocalDate date;
+    private Boolean isPaid;
     private CategoryResponseDTO category;
 }
