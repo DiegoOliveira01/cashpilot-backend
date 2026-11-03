@@ -4,9 +4,11 @@ import com.diego.cashpilot.dto.RecurringTransactionRequestDTO;
 import com.diego.cashpilot.dto.RecurringTransactionResponseDTO;
 import com.diego.cashpilot.model.Category;
 import com.diego.cashpilot.model.RecurringTransaction;
+import com.diego.cashpilot.model.User;
 import com.diego.cashpilot.repository.CategoryRepository;
 import com.diego.cashpilot.repository.RecurringTransactionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -22,8 +24,11 @@ public class RecurringTransactionService {
         return repository.findAll().stream().map(this::toResponse).toList();
     }
 
-    public RecurringTransactionResponseDTO  create(RecurringTransactionRequestDTO  req) {
+    public RecurringTransactionResponseDTO create(RecurringTransactionRequestDTO  req) {
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
         RecurringTransaction rec = new RecurringTransaction();
+        rec.setUser(user);
         rec.setDescription(req.description());
         rec.setAmount(req.amount());
         rec.setType(req.type());
@@ -61,7 +66,7 @@ public class RecurringTransactionService {
         repository.deleteById(id);
     }
 
-    private RecurringTransactionResponseDTO  toResponse(RecurringTransaction rec) {
+    private RecurringTransactionResponseDTO toResponse(RecurringTransaction rec) {
         return new RecurringTransactionResponseDTO(
                 rec.getId(),
                 rec.getDescription(),
