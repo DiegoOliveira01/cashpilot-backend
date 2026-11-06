@@ -45,6 +45,7 @@ public class TransactionService {
                 .date(dto.getDate())
                 .category(resolveCategory(user, dto.getCategoryId(), dto.getType()))
                 .user(user)
+                .isPaid(true)
                 .build();
 
         transaction = transactionRepository.save(transaction);

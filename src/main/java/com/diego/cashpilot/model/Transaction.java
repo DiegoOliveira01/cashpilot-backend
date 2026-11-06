@@ -31,6 +31,7 @@ public class Transaction {
 
     private LocalDate date;
 
+    @Builder.Default
     @Column(nullable = false)
     private Boolean isPaid = true; // Manual = true por padrão, Recorrente = false
 
