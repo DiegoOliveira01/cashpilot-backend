@@ -32,4 +32,9 @@ public interface TransactionRepository  extends JpaRepository<Transaction, Long>
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Transaction t set t.category = null where t.category = :category")
     int clearCategory(@Param("category") Category category);
+
+    /** Ao apagar uma conta recorrente limpa a ligação das transações antigas */
+    @Modifying
+    @Query("UPDATE Transaction t SET t.recurringTransaction = null WHERE t.recurringTransaction.id = :recurringId")
+    void detachRecurringTransactions(@Param("recurringId") Long recurringId);
 }

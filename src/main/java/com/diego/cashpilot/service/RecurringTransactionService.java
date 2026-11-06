@@ -7,9 +7,11 @@ import com.diego.cashpilot.model.RecurringTransaction;
 import com.diego.cashpilot.model.User;
 import com.diego.cashpilot.repository.CategoryRepository;
 import com.diego.cashpilot.repository.RecurringTransactionRepository;
+import com.diego.cashpilot.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -19,6 +21,7 @@ public class RecurringTransactionService {
 
     private final RecurringTransactionRepository repository;
     private final CategoryRepository categoryRepository;
+    private final TransactionRepository transactionRepository;
 
     public List<RecurringTransactionResponseDTO> findAll() {
         return repository.findAll().stream().map(this::toResponse).toList();
@@ -61,8 +64,12 @@ public class RecurringTransactionService {
         repository.save(rec);
     }
 
+    @Transactional
     public void delete(Long id) {
-        // Apenas deleta o molde. As transações geradas continuam no histórico.
+        // 1. Desvincula as transações históricas (elas ficam salvas, mas sem o vínculo com a recorrência)
+        transactionRepository.detachRecurringTransactions(id);
+
+        // 2. Deleta a recorrência
         repository.deleteById(id);
     }
 
