@@ -111,6 +111,8 @@ public class RecurringTransactionService {
                 rec.getCategory() != null ? rec.getCategory().getName() : null,
                 rec.getCategory() != null ? rec.getCategory().getIcon() : null,
                 rec.getFrequency(),
+                rec.getFirstDayOfMonth(),
+                rec.getSecondDayOfMonth(),
                 rec.getStartDate(),
                 rec.getNextOccurrenceDate(),
                 rec.getIsActive()

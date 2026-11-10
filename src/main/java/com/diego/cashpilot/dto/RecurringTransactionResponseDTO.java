@@ -15,6 +15,8 @@ public record RecurringTransactionResponseDTO(
         String categoryName,
         String categoryIcon,
         RecurrenceFrequency frequency,
+        Integer firstDayOfMonth,
+        Integer secondDayOfMonth,
         LocalDate startDate,
         LocalDate nextOccurrenceDate,
         Boolean isActive
