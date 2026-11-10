@@ -57,6 +57,34 @@ public class RecurringTransactionService {
         return toResponse(rec);
     }
 
+    @Transactional
+    public RecurringTransactionResponseDTO update(Long id, RecurringTransactionRequestDTO req) {
+        RecurringTransaction rec = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Recorrência não encontrada"));
+
+        // Atualiza os dados básicos
+        rec.setDescription(req.description());
+        rec.setAmount(req.amount());
+        rec.setType(req.type());
+        rec.setFrequency(req.frequency());
+        rec.setFirstDayOfMonth(req.firstDayOfMonth());
+        rec.setSecondDayOfMonth(req.secondDayOfMonth());
+        rec.setEndDate(req.endDate());
+        rec.setMaxOccurrences(req.maxOccurrences());
+
+        // Atualiza a categoria
+        if (req.categoryId() != null) {
+            Category cat = categoryRepository.findById(req.categoryId())
+                    .orElseThrow(() -> new RuntimeException("Categoria não encontrada"));
+            rec.setCategory(cat);
+        } else {
+            rec.setCategory(null);
+        }
+
+        repository.save(rec);
+        return toResponse(rec);
+    }
+
     public void toggleActive(Long id) {
         RecurringTransaction rec = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Recorrência não encontrada"));

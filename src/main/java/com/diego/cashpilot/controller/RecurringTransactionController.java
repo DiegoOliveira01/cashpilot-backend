@@ -27,6 +27,11 @@ public class RecurringTransactionController {
         return service.create(request);
     }
 
+    @PutMapping("/{id}")
+    public RecurringTransactionResponseDTO update(@PathVariable Long id, @RequestBody RecurringTransactionRequestDTO request) {
+        return service.update(id, request);
+    }
+
     @PatchMapping("/{id}/toggle")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void toggle(@PathVariable Long id) {
