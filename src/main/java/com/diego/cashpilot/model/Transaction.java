@@ -52,4 +52,18 @@ public class Transaction {
     @Column(name = "recurrence_date")
     private LocalDate recurrenceDate;
 
+    @ManyToOne
+    @JoinColumn(name = "credit_card_id")
+    private CreditCard creditCard;
+
+    // Identificador único para agrupar as parcelas da mesma compra (ex: a compra do celular em 10x)
+    @Column(name = "purchase_group_id")
+    private String purchaseGroupId;
+
+    // Qual é o número desta parcela (ex: 1, 2, 3...)
+    private Integer installmentNumber;
+
+    // Quantas parcelas no total (ex: 10)
+    private Integer totalInstallments;
+
 }

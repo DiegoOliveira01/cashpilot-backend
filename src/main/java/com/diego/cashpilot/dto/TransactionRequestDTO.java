@@ -26,4 +26,8 @@ public class TransactionRequestDTO {
     @NotNull
     private LocalDate date;
 
+    private Long creditCardId; // Se for nulo, é uma transação normal
+
+    private Integer installments; // Ex: 1, 2, 10... (se for nulo, assume 1)
+
 }

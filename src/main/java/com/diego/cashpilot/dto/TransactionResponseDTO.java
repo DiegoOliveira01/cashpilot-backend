@@ -18,4 +18,9 @@ public class TransactionResponseDTO {
     private LocalDate date;
     private Boolean isPaid;
     private CategoryResponseDTO category;
+
+    private Long creditCardId;
+    private String purchaseGroupId;
+    private Integer installmentNumber;
+    private Integer totalInstallments;
 }

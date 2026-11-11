@@ -6,10 +6,12 @@ import com.diego.cashpilot.dto.TransactionRequestDTO;
 import com.diego.cashpilot.dto.TransactionResponseDTO;
 import com.diego.cashpilot.dto.TransactionSummaryDTO;
 import com.diego.cashpilot.model.Category;
+import com.diego.cashpilot.model.CreditCard;
 import com.diego.cashpilot.model.Transaction;
 import com.diego.cashpilot.model.User;
 import com.diego.cashpilot.model.enums.TransactionType;
 import com.diego.cashpilot.repository.CategoryRepository;
+import com.diego.cashpilot.repository.CreditCardRepository;
 import com.diego.cashpilot.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -23,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +34,9 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final CategoryRepository categoryRepository;
 
+    private final CreditCardRepository creditCardRepository;
+    private final CreditCardCalculator creditCardCalculator;
+
     public TransactionResponseDTO create(TransactionRequestDTO dto){
         return createForUser(getLoggedUser(), dto);
     }
@@ -38,6 +44,45 @@ public class TransactionService {
     // Usado pelo bot do Telegram: o webhook não tem JWT, então o usuário vem explícito.
     public TransactionResponseDTO createForUser(User user, TransactionRequestDTO dto){
 
+        // LÓGICA PARA COMPRAS NO CARTÃO DE CRÉDITO (PARCELADAS)
+        if (dto.getCreditCardId() != null) {
+            CreditCard card = creditCardRepository.findById(dto.getCreditCardId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cartão não encontrado"));
+
+            // Se não vier a quantidade de parcelas, assume 1x
+            int installments = dto.getInstallments() != null && dto.getInstallments() > 0 ? dto.getInstallments() : 1;
+
+            // Calcula os valores e as datas de vencimento de cada parcela
+            List<CreditCardCalculator.InstallmentInfo> infos = creditCardCalculator.calculateInstallments(
+                    card, dto.getDate(), dto.getAmount(), installments
+            );
+
+            String groupId = UUID.randomUUID().toString(); // Agrupa as parcelas
+            Transaction firstTransaction = null;
+
+            for (CreditCardCalculator.InstallmentInfo info : infos) {
+                Transaction t = Transaction.builder()
+                        .description(dto.getDescription() + " (" + info.number() + "/" + info.total() + ")")
+                        .amount(info.amount())
+                        .type(dto.getType())
+                        .date(info.date()) // A data vira o vencimento da fatura
+                        .category(resolveCategory(user, dto.getCategoryId(), dto.getType()))
+                        .user(user)
+                        .creditCard(card)
+                        .purchaseGroupId(groupId)
+                        .installmentNumber(info.number())
+                        .totalInstallments(info.total())
+                        .isPaid(false) // Parcelas de cartão nascem PENDENTES
+                        .build();
+
+                transactionRepository.save(t);
+                if (firstTransaction == null) firstTransaction = t;
+            }
+
+            return mapToResponse(firstTransaction);
+        }
+
+        //LÓGICA PARA TRANSAÇÕES NORMAIS
         Transaction transaction = Transaction.builder()
                 .description(dto.getDescription())
                 .amount(dto.getAmount())
@@ -45,7 +90,7 @@ public class TransactionService {
                 .date(dto.getDate())
                 .category(resolveCategory(user, dto.getCategoryId(), dto.getType()))
                 .user(user)
-                .isPaid(true)
+                .isPaid(true) // Transação manual nasce paga
                 .build();
 
         transaction = transactionRepository.save(transaction);
@@ -99,6 +144,10 @@ public class TransactionService {
                 .date(transaction.getDate())
                 .isPaid(transaction.getIsPaid())
                 .category(CategoryResponseDTO.of(transaction.getCategory()))
+                .creditCardId(transaction.getCreditCard() != null ? transaction.getCreditCard().getId() : null)
+                .purchaseGroupId(transaction.getPurchaseGroupId())
+                .installmentNumber(transaction.getInstallmentNumber())
+                .totalInstallments(transaction.getTotalInstallments())
                 .build();
     }
 
