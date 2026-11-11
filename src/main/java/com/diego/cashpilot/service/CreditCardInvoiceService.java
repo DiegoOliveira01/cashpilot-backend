@@ -2,7 +2,6 @@ package com.diego.cashpilot.service;
 
 import com.diego.cashpilot.model.CreditCard;
 import com.diego.cashpilot.model.CreditCardInvoice;
-import com.diego.cashpilot.model.Transaction;
 import com.diego.cashpilot.repository.CreditCardInvoiceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,11 +23,10 @@ public class CreditCardInvoiceService {
      */
     @Transactional
     public CreditCardInvoice getOrCreateInvoice(CreditCard card, LocalDate purchaseDate) {
-        // Lógica para definir o mês da fatura baseado no fechamento
-        LocalDate invoiceBaseDate = purchaseDate;
-        if (purchaseDate.getDayOfMonth() > card.getClosingDay()) {
-            invoiceBaseDate = purchaseDate.plusMonths(1);
-        }
+        // Atribuição única usando operador ternário (effectively final)
+        LocalDate invoiceBaseDate = (purchaseDate.getDayOfMonth() > card.getClosingDay())
+                ? purchaseDate.plusMonths(1)
+                : purchaseDate;
 
         String refMonth = YearMonth.from(invoiceBaseDate).format(DateTimeFormatter.ofPattern("yyyy-MM"));
 
