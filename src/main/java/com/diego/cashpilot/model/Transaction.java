@@ -56,6 +56,10 @@ public class Transaction {
     @JoinColumn(name = "credit_card_id")
     private CreditCard creditCard;
 
+    @ManyToOne
+    @JoinColumn(name = "credit_card_invoice_id")
+    private CreditCardInvoice creditCardInvoice;
+
     // Identificador único para agrupar as parcelas da mesma compra (ex: a compra do celular em 10x)
     @Column(name = "purchase_group_id")
     private String purchaseGroupId;

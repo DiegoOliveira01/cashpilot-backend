@@ -5,10 +5,7 @@ import com.diego.cashpilot.dto.CategorySummaryDTO;
 import com.diego.cashpilot.dto.TransactionRequestDTO;
 import com.diego.cashpilot.dto.TransactionResponseDTO;
 import com.diego.cashpilot.dto.TransactionSummaryDTO;
-import com.diego.cashpilot.model.Category;
-import com.diego.cashpilot.model.CreditCard;
-import com.diego.cashpilot.model.Transaction;
-import com.diego.cashpilot.model.User;
+import com.diego.cashpilot.model.*;
 import com.diego.cashpilot.model.enums.TransactionType;
 import com.diego.cashpilot.repository.CategoryRepository;
 import com.diego.cashpilot.repository.CreditCardRepository;
@@ -36,6 +33,7 @@ public class TransactionService {
 
     private final CreditCardRepository creditCardRepository;
     private final CreditCardCalculator creditCardCalculator;
+    private final CreditCardInvoiceService creditCardInvoiceService;
 
     public TransactionResponseDTO create(TransactionRequestDTO dto){
         return createForUser(getLoggedUser(), dto);
@@ -61,28 +59,36 @@ public class TransactionService {
             Transaction firstTransaction = null;
 
             for (CreditCardCalculator.InstallmentInfo info : infos) {
+                // Busca ou cria a fatura para a data dessa parcela
+                CreditCardInvoice invoice = creditCardInvoiceService.getOrCreateInvoice(card, info.date());
+
                 Transaction t = Transaction.builder()
                         .description(dto.getDescription() + " (" + info.number() + "/" + info.total() + ")")
                         .amount(info.amount())
                         .type(dto.getType())
-                        .date(info.date()) // A data vira o vencimento da fatura
+                        .date(info.date())
                         .category(resolveCategory(user, dto.getCategoryId(), dto.getType()))
                         .user(user)
                         .creditCard(card)
+                        .creditCardInvoice(invoice) // Vincula à fatura
                         .purchaseGroupId(groupId)
                         .installmentNumber(info.number())
                         .totalInstallments(info.total())
-                        .isPaid(false) // Parcelas de cartão nascem PENDENTES
+                        .isPaid(false)
                         .build();
 
                 transactionRepository.save(t);
+
+                // Atualiza o valor total da fatura
+                creditCardInvoiceService.addTransactionToInvoice(invoice, info.amount());
+
                 if (firstTransaction == null) firstTransaction = t;
             }
 
             return mapToResponse(firstTransaction);
         }
 
-        //LÓGICA PARA TRANSAÇÕES NORMAIS
+        // LÓGICA PARA TRANSAÇÕES NORMAIS
         Transaction transaction = Transaction.builder()
                 .description(dto.getDescription())
                 .amount(dto.getAmount())
@@ -279,5 +285,4 @@ public class TransactionService {
                 .getAuthentication()
                 .getPrincipal();
     }
-
 }

@@ -28,12 +28,13 @@ public class CreditCardService {
 
         CreditCard card = new CreditCard();
         card.setUser(user);
-        card.setName(req.name());
-        card.setBrand(req.brand());
-        card.setClosingDay(req.closingDay());
-        card.setDueDay(req.dueDay());
-        card.setLimitAmount(req.limitAmount());
-        card.setImageUrl(req.imageUrl());
+
+        card.setName(req.getName());
+        card.setBrand(req.getBrand());
+        card.setClosingDay(req.getClosingDay());
+        card.setDueDay(req.getDueDay());
+        card.setLimitAmount(req.getLimitAmount());
+        card.setImageUrl(req.getImageUrl());
         card.setIsActive(true);
 
         repository.save(card);
@@ -41,11 +42,16 @@ public class CreditCardService {
     }
 
     private CreditCardResponseDTO toResponse(CreditCard card) {
-        return new CreditCardResponseDTO(
-                card.getId(), card.getName(), card.getBrand(),
-                card.getClosingDay(), card.getDueDay(),
-                card.getLimitAmount(), card.getImageUrl(), card.getIsActive()
-        );
+        return CreditCardResponseDTO.builder()
+                .id(card.getId())
+                .name(card.getName())
+                .brand(card.getBrand())
+                .closingDay(card.getClosingDay())
+                .dueDay(card.getDueDay())
+                .limitAmount(card.getLimitAmount())
+                .imageUrl(card.getImageUrl())
+                .isActive(card.getIsActive())
+                .build();
     }
 
     private User getLoggedUser() {
